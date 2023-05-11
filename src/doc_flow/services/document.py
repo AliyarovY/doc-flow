@@ -83,15 +83,14 @@ class DocService:
             self.session
             .query(tables.User)
             .filter(
-                tables.User.id == 1,
-                tables.User.is_superuser is True,
+                tables.User.id == doc_data.admin_id,
             )
             .first()
         )
         if not admin:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail='Not valid admin id',
+                detail=f'Not valid admin id',
                 headers={'WWW-Authenticate': 'Bearer'},
             )
 
