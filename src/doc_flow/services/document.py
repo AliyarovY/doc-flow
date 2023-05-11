@@ -15,6 +15,7 @@ from doc_flow import tables
 
 from doc_flow.database import get_session
 from doc_flow.settings import settings
+from doc_flow.services import utils
 
 
 class DocService:
@@ -24,32 +25,47 @@ class DocService:
                    title: str,
                    message: str,
                    ) -> None:
-        msg = MIMEMultipart()
-        msg['Subject'] = title
-        msg['From'] = settings.smtp_login
-        msg['To'] = to
+        try:
+            msg = MIMEMultipart()
+            msg['Subject'] = title
+            msg['From'] = settings.smtp_login
+            msg['To'] = to
 
-        text = MIMEText(message)
-        msg.attach(text)
+            text = MIMEText(message)
+            msg.attach(text)
 
-        with smtplib.SMTP(settings.smtp_server, settings.smtp_port) as smtp:
-            smtp.starttls()
-            smtp.login(settings.smtp_login, settings.smtp_password)
-            smtp.send_message(msg)
+            with smtplib.SMTP(settings.smtp_server, settings.smtp_port) as smtp:
+                smtp.starttls()
+                smtp.login(settings.smtp_login, settings.smtp_password)
+                smtp.send_message(msg)
+        except:
+            pass
 
     @classmethod
     def send_email_for_admin(cls, to: str, doc: tables.Document):
         title = 'Document to be checked'
-        message = f'{doc.name}\n{doc.content}'
+        message = f'id={doc.id}\n\n{doc.name}\n{doc.content}'
         cls.send_email(to, title, message)
 
     @classmethod
-    def send_email_for_sender(cls, to: str, doc_data: models.AdminCheckedDoc):
-        title = f'Response to "{doc_data.name}" document verification'
-        if doc_data.is_verified:
+    def send_email_for_sender(
+            cls,
+            to: str,
+            comment: str,
+            doc: tables.Document
+    ):
+        title = f'Response to "{doc.name}" document verification'
+
+        if doc.is_verified:
             message = 'Congratulations! Your document has passed inspection.'
         else:
             message = "I'm sorry, but your document didn't pass."
+
+        if comment:
+            message += f'\n\nComment from the administrator:\n{comment}'
+
+        message += f'\n\nDocument id is {doc.id}'
+
         cls.send_email(to, title, message)
 
     @classmethod
@@ -69,14 +85,6 @@ class DocService:
             doc_data: models.CreateDoc,
             user: tables.User,
     ):
-        doc = tables.Document(
-            name=doc_data.name,
-            content=doc_data.content,
-            user_id=user.id,
-            admin_id=doc_data.admin_id,
-        )
-        self.session.add(doc)
-        self.session.commit()
 
         # validate
         admin = (
@@ -87,12 +95,23 @@ class DocService:
             )
             .first()
         )
-        if not admin:
+        if not self.is_admin(admin):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f'Not valid admin id',
                 headers={'WWW-Authenticate': 'Bearer'},
             )
+
+        # doc create
+        doc = tables.Document(
+            name=doc_data.name,
+            content=doc_data.content,
+            user_id=user.id,
+            admin_id=doc_data.admin_id,
+            is_verified=False,
+        )
+        self.session.add(doc)
+        self.session.commit()
 
         # send email
         self.background_tasks.add_task(
@@ -100,6 +119,8 @@ class DocService:
             admin.email,
             doc,
         )
+
+        return self.get_response_doc_dict(doc)
 
     def verify_document(
             self,
@@ -115,9 +136,51 @@ class DocService:
         if not self.is_admin(user):
             raise exception from None
 
+        doc = utils.get_document(doc_data.id)
+        doc.is_verified = doc_data.is_verified
+        self.session.add(doc)
+        self.session.commit()
+
+        sender = (
+            self.session
+            .query(tables.User)
+            .filter(
+                tables.User.id == doc.user_id,
+            )
+            .first()
+        )
+
         # send email
         self.background_tasks.add_task(
-            self.send_email_for_admin,
-            user.email,
-            doc_data,
+            self.send_email_for_sender,
+            sender.email,
+            doc_data.comment,
+            doc,
         )
+
+    def get_response_doc_dict(self, doc: tables.Document) -> models.Doc:
+        user = (
+            self.session
+            .query(tables.User)
+            .filter(
+                tables.User.id == doc.user_id,
+            )
+            .first()
+        )
+        admin = (
+            self.session
+            .query(tables.User)
+            .filter(
+                tables.User.id == doc.admin_id,
+            )
+            .first()
+        )
+
+        return models.Doc(
+            id=doc.id,
+            name=doc.name,
+            content=doc.content,
+            is_verified=doc.is_verified,
+            user=models.User.from_orm(user),
+            admin=models.User.from_orm(admin),
+        ).dict()

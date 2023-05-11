@@ -7,4 +7,5 @@ from .auth import (
 from .document import (
     CreateDoc,
     AdminCheckedDoc,
+    Doc,
 )

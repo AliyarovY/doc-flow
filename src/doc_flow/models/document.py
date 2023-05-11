@@ -1,4 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, root_validator
+
+from doc_flow import models, tables
+
+from doc_flow.services.utils import get_document
 
 
 class CreateDoc(BaseModel):
@@ -9,5 +13,14 @@ class CreateDoc(BaseModel):
 
 class AdminCheckedDoc(BaseModel):
     id: int
-    name: str
     is_verified: bool
+    comment: str = None
+
+
+class Doc(BaseModel):
+    id: int
+    name: str
+    content: str
+    is_verified: bool
+    user: models.User
+    admin: models.User

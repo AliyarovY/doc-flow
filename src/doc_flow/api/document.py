@@ -22,14 +22,15 @@ router = APIRouter(
 
 @router.post(
     '/create/',
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    response_model=models.Doc
 )
 def create_doc(
         doc_data: models.CreateDoc,
         current_user: tables.User = Depends(get_current_user),
         doc_service: DocService = Depends(),
 ):
-    doc_service.create_document(doc_data, current_user)
+    return doc_service.create_document(doc_data, current_user)
 
 
 @router.post(
@@ -41,3 +42,5 @@ def verify_doc(
         doc_service: DocService = Depends(),
 ):
     doc_service.verify_document(doc_data, current_user)
+
+    return {'detail': 'success'}

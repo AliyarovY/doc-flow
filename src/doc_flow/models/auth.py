@@ -4,11 +4,11 @@ from pydantic import BaseModel
 class BaseUser(BaseModel):
     email: str
     username: str
+    is_superuser: bool
 
 
 class UserCreate(BaseUser):
     password: str
-    is_superuser: bool = False
 
 
 class User(BaseUser):
